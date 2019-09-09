@@ -1,0 +1,12 @@
+{
+  "freelancerId": "111111",
+  "firstName": "First Name 111111",
+  "lastName": "Last Name 111111",
+  "emailAddress": "email111111@test.com",
+  "desc": "Product description 111111",
+  "skills": [
+    "java",
+    "sql",
+    "database"
+  ]
+}

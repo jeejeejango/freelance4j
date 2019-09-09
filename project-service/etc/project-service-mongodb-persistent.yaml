@@ -1,0 +1,176 @@
+apiVersion: v1
+kind: Template
+labels:
+  app: project-service
+metadata:
+  annotations:
+    description: Freelance4j project service persistent template for MongoDB
+  name: project-mongodb
+objects:
+  # Project Service
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app: project-service
+      name: project-mongodb
+    spec:
+      ports:
+        - name: mongo
+          port: 27017
+          protocol: TCP
+          targetPort: 27017
+      selector:
+        deploymentconfig: project-mongodb
+      sessionAffinity: None
+      type: ClusterIP
+  - apiVersion: v1
+    kind: DeploymentConfig
+    metadata:
+      labels:
+        app: project-service
+      name: project-mongodb
+    spec:
+      replicas: 1
+      selector:
+        deploymentconfig: project-mongodb
+      strategy:
+        recreateParams:
+          post:
+            execNewPod:
+              command:
+                - /bin/sh
+                - -i
+                - -c
+                - sleep 10 && /opt/rh/rh-mongodb32/root/usr/bin/mongo $PROJECT_MONGODB_SERVICE_HOST:27017/$MONGODB_DATABASE -u $MONGODB_USER -p $MONGODB_PASSWORD
+                  --eval="$MONGODB_INIT"
+              containerName: project-mongodb
+              env:
+                - name: MONGODB_INIT
+                  value: db.projects.insert({"_id":"111111","projectId":"111111","ownerFirstName":"John","ownerLastName":"Woo",
+                    "ownerEmail":"johnwoo@example.com","title":"Face Off",
+                    "description":"American action film directed by John Woo and starring John Travolta and Nicolas Cage.","status":"completed"});
+                    db.projects.insert({"_id":"222222","projectId":"222222","ownerFirstName":"Joss","ownerLastName":"Whedon",
+                    "ownerEmail":"josswhedon@example.com","title":"The Avengers",
+                    "description":"American superhero film based on the Marvel Comics superhero team","status":"completed"});
+                    db.projects.insert({"_id":"333333","projectId":"333333","ownerFirstName":"Gary","ownerLastName":"Dauberman",
+                    "ownerEmail":"gary@example.com","title":"Swamp Thing",
+                    "description":"American superhero horror web television series","status":"cancelled"});
+                    db.projects.insert({"_id":"444444","projectId":"444444","ownerFirstName":"Jon","ownerLastName":"Watts",
+                    "ownerEmail":"jonwatts@example.com","title":"Spider-Man Far From Home",
+                    "description":"Parker is recruited by Nick Fury and Mysterio to face the Elementals","status":"in_progress"});
+                    db.projects.insert({"_id":"555555","projectId":"555555","ownerFirstName":"Todd","ownerLastName":"Phillips",
+                    "ownerEmail":"toddphillips@example.com","title":"Joker",
+                    "description":"based on DC Comics characters, stars Joaquin Phoenix as the Joker","status":"open"});
+            failurePolicy: ignore
+          timeoutSeconds: 600
+        resources: {}
+        type: Recreate
+      template:
+        metadata:
+          labels:
+            app: project-service
+            deploymentconfig: project-mongodb
+        spec:
+          containers:
+            - env:
+                - name: KUBERNETES_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: MONGODB_USER
+                  value: ${PROJECT_DB_USERNAME}
+                - name: MONGODB_PASSWORD
+                  value: ${PROJECT_DB_PASSWORD}
+                - name: MONGODB_DATABASE
+                  value: ${PROJECT_DATABASE}
+                - name: MONGODB_ADMIN_PASSWORD
+                  value: ${PROJECT_DB_PASSWORD}
+              image: mongodb
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 10
+                initialDelaySeconds: 30
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 27017
+                timeoutSeconds: 1
+              name: project-mongodb
+              ports:
+                - containerPort: 27017
+                  protocol: TCP
+              readinessProbe:
+                exec:
+                  command:
+                    - /bin/sh
+                    - -i
+                    - -c
+                    - mongo 127.0.0.1:27017/$MONGODB_DATABASE -u $MONGODB_USER -p $MONGODB_PASSWORD
+                      --eval="quit()"
+                failureThreshold: 10
+                initialDelaySeconds: 5
+                periodSeconds: 10
+                successThreshold: 1
+                timeoutSeconds: 1
+              resources:
+                limits:
+                  cpu: 500m
+                  memory: 1Gi
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+              securityContext:
+                capabilities: {}
+                privileged: false
+              terminationMessagePath: /dev/termination-log
+              volumeMounts:
+                - mountPath: /var/lib/mongodb/data
+                  name: mongodb-data
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          securityContext: {}
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - name: mongodb-data
+              persistentVolumeClaim:
+                claimName: mongodb-data-pv
+      test: false
+      triggers:
+        - imageChangeParams:
+            automatic: true
+            containerNames:
+              - project-mongodb
+            from:
+              kind: ImageStreamTag
+              name: mongodb:3.2
+              namespace: openshift
+          type: ImageChange
+        - type: ConfigChange
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        application: project-mongodb
+      name: mongodb-data-pv
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
+parameters:
+  - description: Project Service database user name
+    from: user[a-zA-Z0-9]{3}
+    generate: expression
+    name: PROJECT_DB_USERNAME
+    required: true
+  - description: Project Service database user password
+    from: '[a-zA-Z0-9]{8}'
+    generate: expression
+    name: PROJECT_DB_PASSWORD
+    required: true
+  - description: Project Service database name
+    name: PROJECT_DATABASE
+    required: true
+    value: projectdb
